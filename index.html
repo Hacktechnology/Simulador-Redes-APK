@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Simulador de Redes Pro - Cisco IOS CLI</title>
+  <script src="https://unpkg.com/konva@8.4.3/konva.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { display: flex; height: 100vh; font-family: 'Segoe UI', monospace, sans-serif; background: #181825; color: #cdd6f4; overflow: hidden; }
+    
+    #sidebar {
+      width: 135px; background: #1e1e2e; padding: 6px; display: flex; flex-direction: column;
+      gap: 4px; border-right: 1px solid #313244; z-index: 5; overflow-y: auto;
+    }
+    #sidebar h3 { font-size: 9px; color: #89b4fa; text-transform: uppercase; margin-top: 6px; font-weight: bold; }
+    .btn {
+      background: #313244; color: #cdd6f4; border: 1px solid #45475a;
+      padding: 7px 4px; border-radius: 5px; font-size: 10px; text-align: left; cursor: pointer;
+    }
+    .btn.active { background: #89b4fa; color: #11111b; font-weight: bold; }
+    .btn-danger { background: #f38ba8; color: #11111b; font-weight: bold; border: none; }
+
+    #main-container { flex: 1; display: flex; flex-direction: column; position: relative; }
+    #canvas-container { flex: 1; background: #11111b; position: relative; }
+
+    /* Modales */
+    .modal {
+      display: none; position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); background: #1e1e2e;
+      border: 2px solid #89b4fa; padding: 12px; border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.8); z-index: 1000; width: 330px;
+      max-height: 90vh; overflow-y: auto;
+    }
+    .modal h4 { margin-bottom: 8px; color: #89b4fa; font-size: 13px; text-align: center; }
+    
+    .modal-tabs { display: flex; gap: 3px; margin-bottom: 10px; border-bottom: 1px solid #45475a; }
+    .tab-btn { flex: 1; padding: 6px 1px; font-size: 9px; background: #313244; color: #cdd6f4; border: none; border-radius: 4px 4px 0 0; cursor: pointer; }
+    .tab-btn.active { background: #89b4fa; color: #11111b; font-weight: bold; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    label { font-size: 10px; display: block; margin-top: 6px; color: #a6adc8; }
+    input, textarea {
+      width: 100%; padding: 5px; margin-top: 2px;
+      background: #313244; border: 1px solid #45475a;
+      color: #fff; border-radius: 4px; font-size: 10px;
+    }
+    button.submit-btn {
+      margin-top: 10px; width: 100%; padding: 7px;
+      background: #89b4fa; color: #11111b; border: none;
+      border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 10px;
+    }
+
+    /* Consola CLI estilo Cisco IOS */
+    .cli-output {
+      background: #000; border: 1px solid #313244; color: #00ff00;
+      font-family: 'Courier New', monospace; font-size: 10px; padding: 8px; height: 160px;
+      overflow-y: auto; border-radius: 4px; margin-bottom: 6px; white-space: pre-wrap;
+    }
+    .cli-input-container { display: flex; gap: 4px; align-items: center; background: #000; padding: 2px 4px; border: 1px solid #313244; border-radius: 4px; }
+    .cli-prompt { color: #00ff00; font-family: 'Courier New', monospace; font-size: 10px; font-weight: bold; }
+    .cli-input-field { background: transparent; border: none; color: #00ff00; font-family: 'Courier New', monospace; font-size: 10px; flex: 1; outline: none; margin: 0; padding: 2px; }
+
+    #cisco-log-panel {
+      height: 90px; background: #181825; border-top: 2px solid #89b4fa;
+      display: flex; flex-direction: column; z-index: 10;
+    }
+    #cisco-log-header {
+      background: #2a2b3d; padding: 4px 8px; font-size: 9px; font-weight: bold;
+      color: #89b4fa; display: flex; justify-content: space-between; align-items: center;
+    }
+    #console-log {
+      flex: 1; padding: 6px; font-family: monospace; font-size: 10px;
+      color: #a6e3a1; overflow-y: auto; background: #0e0e16; line-height: 1.3;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="sidebar">
+    <h3>Equipos</h3>
+    <button class="btn" onclick="addDevice('Router', '🌐')">🌐 Router</button>
+    <button class="btn" onclick="addDevice('Switch', '🔀')">🔀 Switch Cisco</button>
+    <button class="btn" onclick="addDevice('PC', '💻')">💻 PC</button>
+    <button class="btn" onclick="addDevice('Servidor', '🖥️')">🖥️ Servidor</button>
+    
+    <h3>Herramientas</h3>
+    <button id="btn-move" class="btn active" onclick="setMode('move')">🖐️ Config / Mover</button>
+    <button id="btn-connect" class="btn" onclick="setMode('connect')">🔌 Cablear</button>
+    <button id="btn-note" class="btn" onclick="addNote()">📝 Nota Red</button>
+    <button id="btn-delete" class="btn btn-danger" onclick="setMode('delete')">🗑️ Eliminar</button>
+
+    <h3>Archivos</h3>
+    <button class="btn" onclick="exportPNG()">📷 Captura PNG</button>
+    <button class="btn" onclick="saveProject()">💾 Guardar Red</button>
+    <button class="btn" onclick="document.getElementById('file-input').click()">📂 Cargar Red</button>
+    <input type="file" id="file-input" style="display:none;" onchange="loadProject(event)" accept=".json">
+  </div>
+
+  <div id="main-container">
+    <div id="canvas-container"></div>
+
+    <div id="cisco-log-panel">
+      <div id="cisco-log-header">
+        <span>SIMULADOR CISCO IOS - CONSOLA GLOBAL</span>
+        <button style="background:#313244; border:none; color:#fff; padding:2px 5px; font-size:9px;" onclick="toggleLogHeight()">📐 Ajustar</button>
+      </div>
+      <div id="console-log">> SISTEMA CISCO IOS LISTO. Toca un Switch o Router para abrir la consola CLI.</div>
+    </div>
+  </div>
+
+  <!-- Modal Dispositivo -->
+  <div id="config-modal" class="modal">
+    <h4 id="modal-title">Configuración</h4>
+    
+    <div class="modal-tabs">
+      <button class="tab-btn active" id="btn-tab-cli" onclick="switchTab('tab-cli', event)">Consola CLI (IOS)</button>
+      <button class="tab-btn" id="btn-tab-net" onclick="switchTab('tab-net', event)">Red / IP</button>
+      <button class="tab-btn" id="btn-tab-services" onclick="switchTab('tab-services', event)">Servicios</button>
+    </div>
+
+    <!-- Pestaña Terminal CLI Cisco IOS -->
+    <div id="tab-cli" class="tab-content active">
+      <div class="cli-output" id="cli-screen">Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE
+Press RETURN to get started.</div>
+      <div class="cli-input-container">
+        <span class="cli-prompt" id="cli-prompt-label">Switch></span>
+        <input type="text" id="cli-input" class="cli-input-field" autocomplete="off" autocapitalize="none" onkeydown="if(event.key==='Enter') runCiscoCliCommand()">
+      </div>
+      <button class="submit-btn" style="margin-top:6px;" onclick="runCiscoCliCommand()">Enviar Comando</button>
+    </div>
+
+    <!-- Pestaña Red Interfaz Gráfica -->
+    <div id="tab-net" class="tab-content">
+      <label>Nombre del Dispositivo:</label>
+      <input type="text" id="node-name" placeholder="Ej. RTR_CORE, SW_ACCESO">
+
+      <label>Dirección IP:</label>
+      <input type="text" id="node-ip" placeholder="192.168.1.10">
+      
+      <label>Máscara Subred:</label>
+      <input type="text" id="node-mask" value="255.255.255.0">
+      
+      <label>Default Gateway:</label>
+      <input type="text" id="node-gw" placeholder="192.168.1.1">
+
+      <label>Servidor DNS:</label>
+      <input type="text" id="node-dns" placeholder="192.168.1.2">
+
+      <div id="dhcp-section" style="margin-top:8px;">
+        <button type="button" class="submit-btn" style="background:#f9e2af;" onclick="requestDHCP()">📡 Pedir IP por DHCP</button>
+      </div>
+
+      <button class="submit-btn" onclick="saveNodeConfig()">Guardar Cambios</button>
+    </div>
+
+    <!-- Pestaña Servicios -->
+    <div id="tab-services" class="tab-content">
+      <label><input type="checkbox" id="srv-dhcp-enable"> Activar Servidor DHCP</label>
+      <hr style="border-color:#45475a; margin: 8px 0;">
+      <label><input type="checkbox" id="srv-dns-enable"> Activar Servidor DNS</label>
+      <label>Registro DNS (Dominio -> IP):</label>
+      <div style="display:flex; gap:4px;">
+        <input type="text" id="dns-domain" placeholder="cisco.com">
+        <input type="text" id="dns-target-ip" placeholder="192.168.1.2">
+      </div>
+      <button type="button" class="submit-btn" style="background:#a6e3a1; margin-top:4px;" onclick="addDnsRecord()">+ Agregar Registro DNS</button>
+      <div id="dns-records-list" style="font-size:9px; font-family:monospace; margin-top:4px; color:#f9e2af;"></div>
+      
+      <button class="submit-btn" onclick="saveNodeConfig()">Guardar Servicios</button>
+    </div>
+
+    <button style="background:#45475a; color:#fff; margin-top:8px;" class="submit-btn" onclick="closeModal('config-modal')">Cerrar</button>
+  </div>
+
+  <script>
+    const container = document.getElementById('canvas-container');
+    const stage = new Konva.Stage({
+      container: 'canvas-container',
+      width: container.clientWidth,
+      height: container.clientHeight
+    });
+
+    const layer = new Konva.Layer();
+    stage.add(layer);
+
+    let deviceCount = 0;
+    let currentMode = 'move';
+    let selectedNodeA = null;
+    let activeConfigGroup = null;
+    let connections = [];
+    let nodes = [];
+
+    function log(msg) {
+      const c = document.getElementById('console-log');
+      c.innerHTML += `<br>> ${msg}`;
+      c.scrollTop = c.scrollHeight;
+    }
+
+    function toggleLogHeight() {
+      const panel = document.getElementById('cisco-log-panel');
+      panel.style.height = panel.style.height === '40px' ? '120px' : '40px';
+    }
+
+    function switchTab(tabId, ev) {
+      document.querySelectorAll('#config-modal .tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#config-modal .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      if (ev) ev.target.classList.add('active');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).style.display = 'none';
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.getElementById('btn-connect').classList.toggle('active', mode === 'connect');
+      document.getElementById('btn-delete').classList.toggle('active', mode === 'delete');
+      document.getElementById('btn-move').classList.toggle('active', mode === 'move');
+      
+      nodes.forEach(n => n.draggable(mode === 'move'));
+
+      if (selectedNodeA) {
+        selectedNodeA.findOne('Rect').stroke('#89b4fa');
+        selectedNodeA = null;
+        layer.draw();
+      }
+      log(`Modo cambiado a: ${mode.toUpperCase()}`);
+    }
+
+    function addDevice(type, icon, customData = null) {
+      deviceCount++;
+      const xPos = customData ? customData.x : 40 + (deviceCount * 25) % 180;
+      const yPos = customData ? customData.y : 40 + (deviceCount * 25) % 180;
+      const name = customData ? customData.name : `${type}_${deviceCount}`;
+      const ip = customData ? customData.ip : '';
+      const mac = `0050.0F${Math.floor(Math.random()*89+10)}.${Math.floor(Math.random()*89+10)}`;
+
+      const group = new Konva.Group({
+        x: xPos, y: yPos,
+        draggable: currentMode === 'move',
+        id: customData ? customData.id : `node_${Date.now()}_${deviceCount}`
+      });
+
+      group.attrs.netConfig = customData && customData.config ? customData.config : {
+        ip: ip, mask: '255.255.255.0', gw: '', dns: '', type: type, name: name, mac: mac,
+        hostname: name,
+        cliMode: 'user', // 'user', 'priv', 'config', 'config-if'
+        selectedInt: '',
+        interfaces: {
+          'Fa0/1': { ip: '', mask: '', status: 'up', vlan: 1 },
+          'Fa0/2': { ip: '', mask: '', status: 'up', vlan: 1 },
+          'Fa0/24': { ip: '', mask: '', status: 'up', vlan: 1 },
+          'Vlan1': { ip: ip, mask: '255.255.255.0', status: 'up' }
+        },
+        vlans: { 1: 'default' },
+        dhcpEnabled: false, dnsEnabled: false, dnsRecords: {},
+        cliHistory: []
+      };
+
+      const rect = new Konva.Rect({
+        width: 65, height: 50, fill: '#2a2b3d', stroke: '#89b4fa', strokeWidth: 2, cornerRadius: 6
+      });
+
+      const iconText = new Konva.Text({
+        x: 0, y: 5, width: 65, text: icon, fontSize: 18, align: 'center'
+      });
+
+      const label = new Konva.Text({
+        x: -15, y: 53, width: 95, text: name, fontSize: 10, fontStyle: 'bold', fill: '#cdd6f4', align: 'center', id: 'label-name'
+      });
+
+      const ipLabel = new Konva.Text({
+        x: -25, y: 65, width: 115, text: ip ? `IP: ${ip}` : '', fontSize: 9, fill: '#a6e3a1', align: 'center', id: 'label-ip'
+      });
+
+      group.add(rect, iconText, label, ipLabel);
+      layer.add(group);
+      nodes.push(group);
+
+      group.on('dragmove', updateConnections);
+
+      group.on('click tap', function (e) {
+        e.cancelBubble = true;
+
+        if (currentMode === 'delete') {
+          deleteNode(group);
+          return;
+        }
+
+        if (currentMode === 'connect') {
+          if (!selectedNodeA) {
+            selectedNodeA = group;
+            rect.stroke('#f9e2af');
+            log(`Origen conexión: ${group.attrs.netConfig.hostname}`);
+            layer.draw();
+          } else if (selectedNodeA !== group) {
+            createCable(selectedNodeA, group);
+            selectedNodeA.findOne('Rect').stroke('#89b4fa');
+            selectedNodeA = null;
+            layer.draw();
+          }
+          return;
+        }
+
+        if (currentMode === 'move') {
+          activeConfigGroup = group;
+          const conf = group.attrs.netConfig;
+
+          document.getElementById('modal-title').innerText = `${conf.type}: ${conf.hostname}`;
+          document.getElementById('node-name').value = conf.hostname || '';
+          document.getElementById('node-ip').value = conf.ip || '';
+          document.getElementById('node-mask').value = conf.mask || '255.255.255.0';
+          document.getElementById('node-gw').value = conf.gw || '';
+          document.getElementById('node-dns').value = conf.dns || '';
+
+          document.getElementById('btn-tab-services').style.display = conf.type === 'Servidor' ? 'block' : 'none';
+          document.getElementById('dhcp-section').style.display = conf.type === 'PC' ? 'block' : 'none';
+
+          updateCliPrompt();
+          switchTab(conf.type === 'Switch' || conf.type === 'Router' ? 'tab-cli' : 'tab-net');
+          document.getElementById('config-modal').style.display = 'block';
+        }
+      });
+
+      layer.draw();
+      return group;
+    }
+
+    function createCable(nodeA, nodeB) {
+      const isSameType = nodeA.attrs.netConfig.type === nodeB.attrs.netConfig.type;
+      const line = new Konva.Line({
+        stroke: isSameType ? '#f9e2af' : '#a6e3a1',
+        strokeWidth: 3,
+        dash: isSameType ? [8, 4] : [],
+        points: [nodeA.x() + 32, nodeA.y() + 25, nodeB.x() + 32, nodeB.y() + 25]
+      });
+
+      line.on('click tap', function (e) {
+        if (currentMode === 'delete') {
+          e.cancelBubble = true; line.destroy();
+          connections = connections.filter(c => c.line !== line);
+          layer.draw();
+        }
+      });
+
+      line.moveToBottom();
+      layer.add(line);
+      connections.push({ line, nodeA, nodeB });
+      updateConnections();
+      log(`Conectado: ${nodeA.attrs.netConfig.hostname} <---> ${nodeB.attrs.netConfig.hostname}`);
+    }
+
+    function updateConnections() {
+      connections.forEach(conn => {
+        conn.line.points([conn.nodeA.x() + 32, conn.nodeA.y() + 25, conn.nodeB.x() + 32, conn.nodeB.y() + 25]);
+      });
+      layer.draw();
+    }
+
+    function deleteNode(nodeGroup) {
+      connections = connections.filter(conn => {
+        if (conn.nodeA === nodeGroup || conn.nodeB === nodeGroup) { conn.line.destroy(); return false; }
+        return true;
+      });
+      nodes = nodes.filter(n => n !== nodeGroup);
+      nodeGroup.destroy();
+      layer.draw();
+      log(`Dispositivo eliminado.`);
+    }
+
+    function saveNodeConfig() {
+      if (activeConfigGroup) {
+        const conf = activeConfigGroup.attrs.netConfig;
+        
+        // Guardar nuevo nombre personalizado
+        const newName = document.getElementById('node-name').value.trim();
+        if (newName !== "") {
+          conf.name = newName;
+          conf.hostname = newName;
+          
+          const label = activeConfigGroup.findOne('#label-name');
+          if (label) label.text(conf.hostname);
+          
+          document.getElementById('modal-title').innerText = `${conf.type}: ${conf.hostname}`;
+          updateCliPrompt();
+        }
+
+        conf.ip = document.getElementById('node-ip').value.trim();
+        conf.mask = document.getElementById('node-mask').value.trim();
+        conf.gw = document.getElementById('node-gw').value.trim();
+        conf.dns = document.getElementById('node-dns').value.trim();
+
+        const ipLabel = activeConfigGroup.findOne('#label-ip');
+        if (ipLabel) ipLabel.text(conf.ip ? `IP: ${conf.ip}` : '');
+        
+        layer.draw();
+        log(`Guardada configuración de ${conf.hostname}`);
+      }
+      closeModal('config-modal');
+    }
+
+    // --- SISTEMA DE COMANDOS CISCO IOS CLI REAL ---
+
+    function updateCliPrompt() {
+      if (!activeConfigGroup) return;
+      const conf = activeConfigGroup.attrs.netConfig;
+      const promptLabel = document.getElementById('cli-prompt-label');
+      
+      let p = `${conf.hostname}>`;
+      if (conf.cliMode === 'priv') p = `${conf.hostname}#`;
+      else if (conf.cliMode === 'config') p = `${conf.hostname}(config)#`;
+      else if (conf.cliMode === 'config-if') p = `${conf.hostname}(config-if)#`;
+
+      promptLabel.innerText = p;
+    }
+
+    function printCli(text) {
+      const screen = document.getElementById('cli-screen');
+      screen.innerText += `\n${text}`;
+      screen.scrollTop = screen.scrollHeight;
+    }
+
+    function runCiscoCliCommand() {
+      if (!activeConfigGroup) return;
+      const input = document.getElementById('cli-input');
+      const rawCmd = input.value.trim();
+      const conf = activeConfigGroup.attrs.netConfig;
+      const promptText = document.getElementById('cli-prompt-label').innerText;
+
+      if (!rawCmd) { printCli(promptText); return; }
+
+      printCli(`${promptText} ${rawCmd}`);
+      input.value = '';
+
+      const tokens = rawCmd.split(/\s+/);
+      const cmd = tokens[0].toLowerCase();
+
+      // --- COMANDOS MODO USUARIO (Switch>) ---
+      if (conf.cliMode === 'user') {
+        if (cmd === 'enable' || cmd === 'en') {
+          conf.cliMode = 'priv';
+        } else if (cmd === 'ping') {
+          printCli(`Sending 5, 100-byte ICMP Echos to ${tokens[1] || 'target'}...`);
+        } else if (cmd === 'show' || cmd === 'sh') {
+          printCli(`VLAN Name Status\n1 default active`);
+        } else {
+          printCli(`% Command not allowed in User EXEC mode or invalid command.`);
+        }
+      }
+      // --- COMANDOS MODO PRIVILEGIADO (Switch#) ---
+      else if (conf.cliMode === 'priv') {
+        if (cmd === 'configure' && (tokens[1] === 'terminal' || tokens[1] === 't')) {
+          conf.cliMode = 'config';
+          printCli(`Enter configuration commands, one per line. End with CNTL/Z.`);
+        } else if (cmd === 'disable') {
+          conf.cliMode = 'user';
+        } else if (cmd === 'write' || cmd === 'wr') {
+          printCli(`Building configuration...\n[OK]`);
+        } else {
+          printCli(`% Unknown or incomplete command.`);
+        }
+      }
+      // --- COMANDOS MODO CONFIG GLOBAL (Switch(config)#) ---
+      else if (conf.cliMode === 'config') {
+        if (cmd === 'exit') {
+          conf.cliMode = 'priv';
+        } else if (cmd === 'hostname') {
+          if (tokens[1]) {
+            conf.hostname = tokens[1];
+            conf.name = tokens[1];
+            activeConfigGroup.findOne('#label-name').text(conf.hostname);
+            layer.draw();
+          }
+        } else if (cmd === 'interface' || cmd === 'int') {
+          conf.cliMode = 'config-if
+            else {
+          printCli(`% Invalid command at global config level.`);
+        }
+      }
+      // --- COMANDOS MODO INT (Switch(config-if)#) ---
+      else if (conf.cliMode === 'config-if') {
+        if (cmd === 'exit') {
+          conf.cliMode = 'config';
+        } else {
+          printCli(`% Command executed in interface mode.`);
+        }
+      }
+
+      updateCliPrompt();
+    }
+
+    function addNote() {
+      const text = prompt("Ingrese la nota para la red:", "Red LAN 192.168.1.0/24");
+      if (text) {
+        const note = new Konva.Text({
+          x: 100, y: 100, text: text, fontSize: 12, fill: '#f9e2af', draggable: true
+        });
+        layer.add(note);
+        layer.draw();
+      }
+    }
+
+    function exportPNG() {
+      const dataURL = stage.toDataURL({ pixelRatio: 2 });
+      const link = document.createElement('a');
+      link.download = 'topologia_red.png';
+      link.href = dataURL;
+      link.click();
+    }
+
+    function saveProject() {
+      const projectData = nodes.map(n => ({
+        x: n.x(), y: n.y(), config: n.attrs.netConfig
+      }));
+      const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'proyecto_red.json';
+      link.click();
+    }
+
+    function loadProject(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = JSON.parse(e.target.result);
+        nodes.forEach(n => n.destroy());
+        nodes = [];
+        connections.forEach(c => c.line.destroy());
+        connections = [];
+
+        data.forEach(d => {
+          const icon = d.config.type === 'Router' ? '🌐' : d.config.type === 'Switch' ? '🔀' : d.config.type === 'PC' ? '💻' : '🖥️';
+          addDevice(d.config.type, icon, { x: d.x, y: d.y, name: d.config.name, ip: d.config.ip, config: d.config });
+        });
+        layer.draw();
+      };
+      reader.readAsText(file);
+    }
+  </script>
+</body>
+</html>
